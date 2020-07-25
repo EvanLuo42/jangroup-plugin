@@ -1,66 +1,105 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <fstream> 
+#include <iterator>
+#include <string>
+#include <regex>
 
 #include <cqcppsdk/cqcppsdk.h>
+#include <nlohmann/json.hpp>
 
 using namespace cq;
 using namespace std;
 using Message = cq::message::Message;
 using MessageSegment = cq::message::MessageSegment;
 
+static const set<int64_t> ENABLED_GROUPS = {738324937};
+
+
 CQ_INIT {
-    on_enable([] { logging::info("启用", "插件已启用"); });
-
-    on_private_message([](const PrivateMessageEvent &event) {
-        try {
-            auto msgid = send_private_message(event.user_id, event.message); // 直接复读消息
-            logging::info_success("私聊", "私聊消息复读完成, 消息 Id: " + to_string(msgid));
-            send_message(event.target,
-                         MessageSegment::face(111) + "这是通过 message 模块构造的消息~"); // 使用 message 模块构造消息
-        } catch (ApiError &err) {
-            logging::warning("私聊", "私聊消息复读失败, 错误码: " + to_string(err.code));
+    on_enable([] {
+        logging::info("启用", "插件已启用"); 
+        static vector<std::string> dirtyWords;
+        ifstream file(dir::root()+"DirtyWords.txt");
+        while (file) {
+            std::string line;
+            std::getline(file, line);
+            dirtyWords.push_back(line);
         }
-    });
-
-    on_message([](const MessageEvent &event) {
-        logging::debug("消息", "收到消息: " + event.message + "\n实际类型: " + typeid(event).name());
     });
 
     on_group_message([](const GroupMessageEvent &event) {
-        static const set<int64_t> ENABLED_GROUPS = {123456, 123457};
-        if (ENABLED_GROUPS.count(event.group_id) == 0) return; // 不在启用的群中, 忽略
-
-        try {
-            send_message(event.target, event.message); // 复读
-            auto mem_list = get_group_member_list(event.group_id); // 获取群成员列表
-            string msg;
-            for (auto i = 0; i < min(10, static_cast<int>(mem_list.size())); i++) {
-                msg += "昵称: " + mem_list[i].nickname + "\n"; // 拼接前十个成员的昵称
+        if (ENABLED_GROUPS.count(event.group_id) == 0) return;
+        if (event.message == "菜单") {
+            send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) + "]\n---菜单---\n1.签到");
+        }
+        if (event.message == "签到") {
+            send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) + "]\n签到成功AWA\n元气+1");
+        }   
+        /*if (event.message == "天气") {
+            regex weather("[a - zA - Z]");
+            smatch result;
+            std::string message = event.message;
+            if (regex_match(message, result, weather)) {
+                try {
+                    Response resp = Get("http://api.k780.com/?app=weather.today&weaid=" + to_string(result[0])
+                                        + "&appkey=48814&sign=76e8d37b8eecb72b6debf702a496a677&format=json");
+                    nlohmann::json urlResult = to_string(resp.GetText());
+                    send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) +"]\n日期:" + to_string(urlResult["days"])+ "\n气温:" + to_string(urlResult["temperature_curr"])+ "\n湿度:" + to_string(urlResult["humidity"]));
+                        
+                } catch (ApiError &) {
+                    send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) + "]\n天气查询失败");
+                }
+            } else {
+                send_group_message(event.group_id, "格式错误!正确格式:天气 <城市全拼>");
             }
-            send_group_message(event.group_id, msg); // 发送群消息
-        } catch (ApiError &) { // 忽略发送失败
-        }
-        if (event.is_anonymous()) {
-            logging::info("群聊", "消息是匿名消息, 匿名昵称: " + event.anonymous.name);
-        }
-        event.block(); // 阻止当前事件传递到下一个插件
+        }*/
+        event.block();
     });
 
-    on_group_upload([](const auto &event) { // 可以使用 auto 自动推断类型
+    on_group_upload([](const auto &event) {
+        if (ENABLED_GROUPS.count(event.group_id) == 0) return;
         stringstream ss;
-        ss << "您上传了一个文件, 文件名: " << event.file.name << ", 大小(字节): " << event.file.size;
+        ss << "有人上传了" << event.file.name << ", 大小: " << event.file.size << "Bytes";
         try {
-            send_message(event.target, ss.str());
+            send_group_message(event.group_id, ss.str());
         } catch (ApiError &) {
+        }
+    });
+
+    on_group_member_decrease([](const GroupMemberDecreaseEvent &event) {
+        if (ENABLED_GROUPS.count(event.group_id) == 0) return;
+        try {
+            send_group_message(event.group_id, "有一名群成员退出了群聊!");
+        } catch (ApiError &) {
+        }
+    });
+
+    on_group_member_increase([](const GroupMemberIncreaseEvent &event) {
+        if (ENABLED_GROUPS.count(event.group_id) == 0) return;
+        try {
+            send_group_message(event.group_id, "有一名群成员加入了群聊!");
+        } catch (ApiError &) {
+        }
+    });
+
+    on_private_message([](const PrivateMessageEvent &event) { 
+        if (event.message == "hi") {
+            try {
+                send_private_message(event.user_id, "你好");
+            } catch (ApiError &) {
+            }
+        }
+    });
+
+    on_group_message([](const GroupMessageEvent &event) {
+        if (ENABLED_GROUPS.count(event.group_id) == 0) return;
+        if (event.message == "hi") {
         }
     });
 }
 
 CQ_MENU(menu_demo_1) {
-    logging::info("菜单", "点击菜单1");
-}
-
-CQ_MENU(menu_demo_2) {
-    send_private_message(10000, "测试");
+    logging::info("菜单", "为京都动画聚友社定制的插件。");
 }
