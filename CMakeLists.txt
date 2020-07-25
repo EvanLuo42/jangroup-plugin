@@ -20,6 +20,8 @@ if (CQ_CAN_BUILD_STD_MODE)
 endif ()
 
 include_directories(extern/nlohmann-json/include) # 添加包含目录
+include_directories(extern/curl/include)
 
 # 添加 dev 模式的可执行文件构建目标
 cq_add_dev_app(${SOURCE_FILES})
+target_link_libraries(app libcurl)  

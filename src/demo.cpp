@@ -8,6 +8,7 @@
 
 #include <cqcppsdk/cqcppsdk.h>
 #include <nlohmann/json.hpp>
+#include <curl/curl.h>
 
 using namespace cq;
 using namespace std;
@@ -15,6 +16,30 @@ using Message = cq::message::Message;
 using MessageSegment = cq::message::MessageSegment;
 
 static const set<int64_t> ENABLED_GROUPS = {738324937};
+
+std::string get_content(const std::string &url) {
+    std::string body;
+
+    auto curl = curl_easy_init();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+        auto receive = [](char *buf, size_t size, size_t count, void *data) {
+            (*static_cast<std::string *>(data)) += std::string(buf, count);
+            return size * count;
+        };
+        typedef size_t (*WriteFunction)(char *, size_t, size_t, void *);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, static_cast<WriteFunction>(receive));
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+
+        curl_easy_perform(curl);
+
+        curl_easy_cleanup(curl);
+    }
+
+    return body;
+}
 
 
 CQ_INIT {
@@ -37,15 +62,15 @@ CQ_INIT {
         if (event.message == "签到") {
             send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) + "]\n签到成功AWA\n元气+1");
         }   
-        /*if (event.message == "天气") {
+        if (event.message == "天气") {
             regex weather("[a - zA - Z]");
             smatch result;
             std::string message = event.message;
             if (regex_match(message, result, weather)) {
                 try {
-                    Response resp = Get("http://api.k780.com/?app=weather.today&weaid=" + to_string(result[0])
+                    string request=get_content("http://api.k780.com/?app=weather.today&weaid=" + to_string(result[0])
                                         + "&appkey=48814&sign=76e8d37b8eecb72b6debf702a496a677&format=json");
-                    nlohmann::json urlResult = to_string(resp.GetText());
+                    nlohmann::json urlResult = request;
                     send_group_message(event.group_id, "[CQ:at,qq=" + to_string(event.user_id) +"]\n日期:" + to_string(urlResult["days"])+ "\n气温:" + to_string(urlResult["temperature_curr"])+ "\n湿度:" + to_string(urlResult["humidity"]));
                         
                 } catch (ApiError &) {
@@ -54,7 +79,7 @@ CQ_INIT {
             } else {
                 send_group_message(event.group_id, "格式错误!正确格式:天气 <城市全拼>");
             }
-        }*/
+        }
         event.block();
     });
 
